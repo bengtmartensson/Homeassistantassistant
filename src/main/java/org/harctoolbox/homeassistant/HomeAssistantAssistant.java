@@ -62,6 +62,7 @@ public final class HomeAssistantAssistant {
     private static final String DEFAULT_TOKEN_FILE = "token.txt";
     private static final String ENTITY_ID = "entity_id";
     private static final String HTTP = "http";
+    private static final String GET = "GET";
     private static final String POST = "POST";
     private static final String STATES = "states";
     private static final String STATE = "state";
@@ -69,10 +70,12 @@ public final class HomeAssistantAssistant {
     private static final String EVENTS = "events";
     private static final String CONFIG = "config";
     private static final String TOGGLE = "toggle";
+    private static final String TURN_ON = "turn_on";
+    private static final String TURN_OFF = "turn_off";
     private static final String HOMEASSISTANT = "homeassistant";
-    private static final String GET = "GET";
-    private static final Proxy proxy = Proxy.NO_PROXY;
+    private static final String SHELL_COMMAND = "shell_command";
 
+    private static final Proxy proxy = Proxy.NO_PROXY;
     private static final JsonWriterFactory writerFactory;
 
     static {
@@ -84,6 +87,7 @@ public final class HomeAssistantAssistant {
     private static String readToken(String tokenFile) throws IOException {
         BufferedReader reader = new BufferedReader(new FileReader(tokenFile));
         String tok = reader.readLine();
+        logger.log(Level.INFO, "Homeassistant token successfully read from file {0}", tokenFile);
         return tok;
     }
 
@@ -106,8 +110,7 @@ public final class HomeAssistantAssistant {
         }
 
         try {
-            String token = commandLineArgs.token != null ? commandLineArgs.token : readToken(commandLineArgs.tokenFile);
-            HomeAssistantAssistant ha = new HomeAssistantAssistant(commandLineArgs.hostname, commandLineArgs.port, token, commandLineArgs.verbose);
+            HomeAssistantAssistant ha = new HomeAssistantAssistant(commandLineArgs.hostname, commandLineArgs.port, commandLineArgs.token, commandLineArgs.verbose);
 
             if (commandLineArgs.parameters.isEmpty()) {
                 JsonObject o = ha.getRoot();
@@ -137,6 +140,16 @@ public final class HomeAssistantAssistant {
                     break;
                     case TOGGLE: {
                         ha.toggle(commandLineArgs.entity_id);
+                    } break;
+                    case TURN_ON: {
+                        ha.turnOn(commandLineArgs.entity_id);
+                    } break;
+                    case TURN_OFF: {
+                        ha.turnOff(commandLineArgs.entity_id);
+                    }
+                    break;
+                    case SHELL_COMMAND: {
+                        ha.shellCommand(commandLineArgs.parameters.get(1));
                     }
                     break;
                     default:
@@ -165,10 +178,11 @@ public final class HomeAssistantAssistant {
     private final Map<String, String> headers;
     private final boolean verbose;
 
-    public HomeAssistantAssistant(String host, int port, String token, boolean verbose) {
+    public HomeAssistantAssistant(String host, int port, String token, boolean verbose) throws IOException {
         urlRoot = HTTP + "://" + host + ":" + port + "/" + API_NAME + "/";
         headers = new HashMap<>(2);
-        headers.put(AUTHORIZATION_NAME, BEARER_NAME + " " + token);
+        String actualToken = token.charAt(0) != '@' ? token : readToken(token.substring(1));
+        headers.put(AUTHORIZATION_NAME, BEARER_NAME + " " + actualToken);
         headers.put(CONTENT_TYPE, APPLICATION_JSON);
         this.verbose = verbose;
     }
@@ -226,12 +240,33 @@ public final class HomeAssistantAssistant {
 
     private boolean putStuff(String path, String entity_id) throws IOException {
         Map<String, String> map = new HashMap<>(1);
-        map.put(ENTITY_ID, entity_id);
+        if (entity_id != null && ! entity_id.isEmpty())
+            map.put(ENTITY_ID, entity_id);
         return putStuff(path, map);
     }
 
-    public void toggle(String entityId) throws IOException {
-        putStuff(SERVICES + "/" + HOMEASSISTANT + "/" + TOGGLE, entityId);
+    public boolean services(String domain, String serviceName, String entityId) throws IOException {
+        return putStuff(SERVICES + "/" + domain + "/" + serviceName, entityId);
+    }
+
+    private boolean services(String serviceName, String entityId) throws IOException {
+        return services(HOMEASSISTANT, serviceName, entityId);
+    }
+
+    public boolean toggle(String entityId) throws IOException {
+        return services(TOGGLE, entityId);
+    }
+
+    public boolean turnOn(String entityId) throws IOException {
+        return services(TURN_ON, entityId);
+    }
+
+    public boolean turnOff(String entityId) throws IOException {
+        return services(TURN_OFF, entityId);
+    }
+
+    public boolean shellCommand(String commandName) throws IOException {
+        return services(SHELL_COMMAND, commandName, null);
     }
 
     public JsonObject getRoot() throws IOException {
@@ -252,7 +287,7 @@ public final class HomeAssistantAssistant {
 
     public JsonArray getEvents() throws IOException {
         return getArray(EVENTS);
-    }
+   }
 
     public JsonArray getServices() throws IOException {
         return getArray(SERVICES);
@@ -268,7 +303,7 @@ public final class HomeAssistantAssistant {
 
     private final static class CommandLineArgs {
 
-        @Parameter(names = {"-e", "--entity", "--entity_id"}, description = "Entity name in homeassistant")
+        @Parameter(names = {"-e", "--entity", "--entity_id"}, description = "entity_id name in homeassistant")
         private String entity_id = null;
 
         @Parameter(names = {"-?", "--help"}, description = "Print help message")
@@ -280,11 +315,8 @@ public final class HomeAssistantAssistant {
         @Parameter(names = {"-p", "--port"}, description = "Port number for homeassistant host")
         private int port = HOMEASSISTANT_DEFAULT_PORT;
 
-        @Parameter(names = {"-t", "--token"},  description = "Token for homeassistant")
-        private String token = null;
-
-        @Parameter(names = {"-T", "--tfile"},  description = "Token file for homeassistant")
-        private String tokenFile = "token.txt";
+        @Parameter(names = {"-t", "--token"},  description = "Token for homeassistant; prepend by @ to read from file")
+        private String token = "@token.txt";
 
         @Parameter(names = {"-v", "-verbose"}, description = "Verbose execution")
         private boolean verbose = false;
