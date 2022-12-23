@@ -72,6 +72,9 @@ public final class HomeAssistantAssistant {
     private static final String TOGGLE = "toggle";
     private static final String TURN_ON = "turn_on";
     private static final String TURN_OFF = "turn_off";
+    private static final String REMOTE = "remote";
+    private static final String SEND_COMMAND = "send_command";
+    private static final String COMMAND = "command";
     private static final String HOMEASSISTANT = "homeassistant";
     private static final String SHELL_COMMAND = "shell_command";
 
@@ -109,6 +112,7 @@ public final class HomeAssistantAssistant {
             System.exit(0);
         }
 
+        Boolean success = null;
         try {
             HomeAssistantAssistant ha = new HomeAssistantAssistant(commandLineArgs.hostname, commandLineArgs.port, commandLineArgs.token, commandLineArgs.verbose);
 
@@ -128,8 +132,12 @@ public final class HomeAssistantAssistant {
                     }
                     break;
                     case SERVICES: {
-                        JsonStructure array = ha.getServices();
-                        prettyPrint(System.out, array);
+                        if (commandLineArgs.parameters.size() == 1) {
+                            JsonStructure array = ha.getServices();
+                            prettyPrint(System.out, array);
+                        } else {
+                            ha.services(commandLineArgs.parameters.get(1), commandLineArgs.parameters.get(2), commandLineArgs.entity_id, commandLineArgs.data);
+                        }
                     }
                     break;
                     case STATES:
@@ -139,17 +147,21 @@ public final class HomeAssistantAssistant {
                     }
                     break;
                     case TOGGLE: {
-                        ha.toggle(commandLineArgs.entity_id);
+                        success = ha.toggle(commandLineArgs.entity_id);
                     } break;
                     case TURN_ON: {
-                        ha.turnOn(commandLineArgs.entity_id);
+                        success = ha.turnOn(commandLineArgs.entity_id);
                     } break;
                     case TURN_OFF: {
-                        ha.turnOff(commandLineArgs.entity_id);
+                        success = ha.turnOff(commandLineArgs.entity_id);
                     }
                     break;
                     case SHELL_COMMAND: {
-                        ha.shellCommand(commandLineArgs.parameters.get(1));
+                        success = ha.shellCommand(commandLineArgs.parameters.get(1));
+                    }
+                    break;
+                    case REMOTE: {
+                        success = ha.remote(commandLineArgs.entity_id, commandLineArgs.parameters.get(1));
                     }
                     break;
                     default:
@@ -159,6 +171,8 @@ public final class HomeAssistantAssistant {
         } catch (IOException ex) {
             logger.log(Level.SEVERE, null, ex);
         }
+        if (success != null)
+            System.err.println(success ? "Success" : "Failure");
     }
 
     private static String toPrettyString(JsonObject jsonObject) throws IOException {
@@ -245,13 +259,41 @@ public final class HomeAssistantAssistant {
         return putStuff(path, map);
     }
 
+    private static Map<String, String> mkDictionary(String entity_id) throws IOException {
+        Map<String, String> map = new HashMap<>(4);
+        if (entity_id != null && ! entity_id.isEmpty())
+            map.put(ENTITY_ID, entity_id);
+        return map;
+    }
+
+    private static Map<String, String> mkDictionary(String entity_id, List<String> data) throws IOException {
+        Map<String, String> map = mkDictionary(entity_id);
+        if (data != null)
+            for (int i = 0; i < data.size(); i += 2)
+                map.put(data.get(i), data.get(i+1));
+        return map;
+    }
+
+    public boolean services(String domain, String serviceName, String entityId, List<String> data) throws IOException {
+        return putStuff(SERVICES + "/" + domain + "/" + serviceName, mkDictionary(entityId, data));
+    }
+
     public boolean services(String domain, String serviceName, String entityId) throws IOException {
-        return putStuff(SERVICES + "/" + domain + "/" + serviceName, entityId);
+           return services(domain, serviceName, entityId, null);
     }
 
     private boolean services(String serviceName, String entityId) throws IOException {
         return services(HOMEASSISTANT, serviceName, entityId);
     }
+
+    private boolean remote(String entity_id, String command) throws IOException {
+        String ent_id = entity_id.contains(".") ? entity_id : REMOTE + "." + entity_id;
+        List<String> data = new ArrayList<>(4);
+        data.add(COMMAND);
+        data.add(command);
+        return services(REMOTE, SEND_COMMAND, ent_id, data);
+    }
+
 
     public boolean toggle(String entityId) throws IOException {
         return services(TOGGLE, entityId);
@@ -266,7 +308,7 @@ public final class HomeAssistantAssistant {
     }
 
     public boolean shellCommand(String commandName) throws IOException {
-        return services(SHELL_COMMAND, commandName, null);
+        return services(SHELL_COMMAND, commandName, null, null);
     }
 
     public JsonObject getRoot() throws IOException {
@@ -302,6 +344,9 @@ public final class HomeAssistantAssistant {
     }
 
     private final static class CommandLineArgs {
+
+        @Parameter(names = {"-d", "--data"}, arity = 2, description = "Extra data (in pairs) to be PUT")
+        private List<String> data = new ArrayList<>(4);
 
         @Parameter(names = {"-e", "--entity", "--entity_id"}, description = "entity_id name in homeassistant")
         private String entity_id = null;
