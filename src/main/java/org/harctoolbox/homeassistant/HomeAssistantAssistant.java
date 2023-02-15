@@ -1,5 +1,5 @@
 /*
-Copyright (C) 2022 Bengt Martensson.
+Copyright (C) 2022, 2023 Bengt Martensson.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -114,7 +114,7 @@ public final class HomeAssistantAssistant {
 
         Boolean success = null;
         try {
-            HomeAssistantAssistant ha = new HomeAssistantAssistant(commandLineArgs.hostname, commandLineArgs.port, commandLineArgs.token, commandLineArgs.verbose);
+            HomeAssistantAssistant ha = new HomeAssistantAssistant(commandLineArgs.hostname, commandLineArgs.port, commandLineArgs.token, commandLineArgs.verbose, commandLineArgs.data);
 
             if (commandLineArgs.parameters.isEmpty()) {
                 JsonObject o = ha.getRoot();
@@ -191,10 +191,12 @@ public final class HomeAssistantAssistant {
     private final String urlRoot;
     private final Map<String, String> headers;
     private final boolean verbose;
+    private final List<String> postData;
 
-    public HomeAssistantAssistant(String host, int port, String token, boolean verbose) throws IOException {
+    public HomeAssistantAssistant(String host, int port, String token, boolean verbose, List<String> postData) throws IOException {
         urlRoot = HTTP + "://" + host + ":" + port + "/" + API_NAME + "/";
         headers = new HashMap<>(2);
+        this.postData = postData;
         String actualToken = token.charAt(0) != '@' ? token : readToken(token.substring(1));
         headers.put(AUTHORIZATION_NAME, BEARER_NAME + " " + actualToken);
         headers.put(CONTENT_TYPE, APPLICATION_JSON);
@@ -202,7 +204,7 @@ public final class HomeAssistantAssistant {
     }
 
     public HomeAssistantAssistant() throws IOException {
-        this(HOMEASSISTANT_DEFAULT_HOST, HOMEASSISTANT_DEFAULT_PORT, readToken(DEFAULT_TOKEN_FILE), false);
+        this(HOMEASSISTANT_DEFAULT_HOST, HOMEASSISTANT_DEFAULT_PORT, readToken(DEFAULT_TOKEN_FILE), false, new ArrayList<String>(0));
     }
 
     @SuppressWarnings("UseOfSystemOutOrSystemErr")
@@ -266,11 +268,13 @@ public final class HomeAssistantAssistant {
         return map;
     }
 
-    private static Map<String, String> mkDictionary(String entity_id, List<String> data) throws IOException {
+    private Map<String, String> mkDictionary(String entity_id, List<String> data) throws IOException {
         Map<String, String> map = mkDictionary(entity_id);
         if (data != null)
             for (int i = 0; i < data.size(); i += 2)
                 map.put(data.get(i), data.get(i+1));
+        for (int i = 0; i < postData.size(); i += 2)
+            map.put(postData.get(i), postData.get(i+1));
         return map;
     }
 
